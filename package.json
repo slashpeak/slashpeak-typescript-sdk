@@ -1,6 +1,6 @@
 {
   "name": "slashpeak",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SlashPeak Job Router: run each warehouse query where it costs less (BigQuery today).",
   "license": "Apache-2.0",
   "author": "SlashPeak <slashpeak@proton.me>",
@@ -9,7 +9,12 @@
     "type": "git",
     "url": "git+https://github.com/slashpeak/slashpeak-typescript-sdk.git"
   },
-  "keywords": ["bigquery", "cost", "reservations", "finops"],
+  "keywords": [
+    "bigquery",
+    "cost",
+    "reservations",
+    "finops"
+  ],
   "type": "module",
   "engines": {
     "node": ">=20.19"
@@ -30,7 +35,13 @@
   "bin": {
     "slashpeak": "dist/cli.js"
   },
-  "files": ["dist", "spec", "README.md", "LICENSE", "SECURITY.md"],
+  "files": [
+    "dist",
+    "spec",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
