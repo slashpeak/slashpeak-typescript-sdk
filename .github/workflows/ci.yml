@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    paths-ignore: ["**.md"]
+  schedule:
+    # Weekly, against the newest @google-cloud/bigquery.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+        bigquery: ["7", "latest"]
+        exclude:
+          # @google-cloud/bigquery 9 needs Node 22+.
+          - node: "20"
+            bigquery: "latest"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install
+        run: |
+          npm ci
+          npm install --no-save "@google-cloud/bigquery@${{ matrix.bigquery }}"
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build

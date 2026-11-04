@@ -1,0 +1,58 @@
+{
+  "name": "slashpeak",
+  "version": "0.1.0",
+  "description": "SlashPeak Job Router: run each warehouse query where it costs less (BigQuery today).",
+  "license": "Apache-2.0",
+  "author": "SlashPeak <slashpeak@proton.me>",
+  "homepage": "https://slashpeak.com/docs/product/job-router",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slashpeak/slashpeak-typescript-sdk.git"
+  },
+  "keywords": ["bigquery", "cost", "reservations", "finops"],
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bigquery": {
+      "types": "./dist/bigquery/index.d.ts",
+      "default": "./dist/bigquery/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "slashpeak": "dist/cli.js"
+  },
+  "files": ["dist", "spec", "README.md", "LICENSE", "SECURITY.md"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "rm -rf .test-build && tsc -p tsconfig.json && node --test --test-concurrency=1 .test-build/test/*.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "re2js": "^2.8.8",
+    "undici": "^7.16.0"
+  },
+  "peerDependencies": {
+    "@google-cloud/bigquery": ">=7 <10"
+  },
+  "peerDependenciesMeta": {
+    "@google-cloud/bigquery": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@google-cloud/bigquery": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,35 @@
+name: release
+
+# Tag `v0.1.0` to publish that version. npm trusted publishing (OIDC) with provenance: no token is stored.
+# Set it up once on npmjs.com → the `slashpeak` package → Settings → Trusted publisher:
+# GitHub Actions, repo slashpeak/slashpeak-typescript-sdk, workflow release.yml, environment npm.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - name: Check the tag matches the version
+        run: test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME}"
+      - name: Test
+        run: |
+          npm ci
+          npm test
+      - name: Publish
+        run: |
+          npm install -g npm@11.6.2
+          npm publish --provenance --access public
