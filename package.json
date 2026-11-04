@@ -1,6 +1,6 @@
 {
   "name": "slashpeak",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SlashPeak Job Router: run each warehouse query where it costs less (BigQuery today).",
   "license": "Apache-2.0",
   "author": "SlashPeak <slashpeak@proton.me>",
