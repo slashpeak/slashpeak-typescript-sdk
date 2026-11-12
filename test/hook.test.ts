@@ -368,3 +368,50 @@ test("no callback, or a non-object request, passes straight through", async () =
   assert.deepEqual(returned, insert());
   assert.equal(transport.decides().length, 0);
 });
+
+const ON_DEMAND = (cap?: string) => ok({ ...decision({ action: "set_reservation", reservation: "none", label: "m_d1-x" }), ...(cap ? { maximumBytesBilled: cap } : {}) });
+
+test("jobs.query: a move to on-demand sets reservation none and the bytes cap; the request says it can re-run", async () => {
+  const { router, transport, hook, bq } = setup();
+  transport.decideReplies = [ON_DEMAND("2048")];
+  await call(hook, bq, { method: "POST", uri: "/queries", json: { query: "SELECT 1", requestId: "req-1", location: "US" } });
+  assert.equal(bq.sent[0]!.json.reservation, "none");
+  assert.equal(bq.sent[0]!.json.maximumBytesBilled, "2048");
+  assert.deepEqual((transport.decides()[0]!.body as any).client.capabilities, ["rerun_bytes_cap"]);
+  assert.deepEqual((await events(router, transport)).map((e) => e.state), ["submitted"]);
+});
+
+test("jobs.query: the bytes cap we set stops the job → the original runs once, reported as fallback", async () => {
+  const { router, transport, hook, bq } = setup();
+  transport.decideReplies = [ON_DEMAND("2048")];
+  bq.failWith = [new FakeError(400, "bytesBilledLimitExceeded", "Query exceeded limit for bytes billed: 2048. 4096 or higher required.")];
+  const { error } = await call(hook, bq, { method: "POST", uri: "/queries", json: { query: "SELECT 1", requestId: "req-1" } });
+  assert.equal(error, null);
+  assert.equal(bq.sent.length, 2);
+  assert.equal("reservation" in bq.sent[1]!.json, false);
+  assert.equal("maximumBytesBilled" in bq.sent[1]!.json, false);
+  const [event] = await events(router, transport);
+  assert.equal(event.state, "fallback");
+  assert.equal(event.errorReason, "bytesBilledLimitExceeded");
+});
+
+test("the user's own bytes cap stays, and a stop on it goes to the caller", async () => {
+  const { router, transport, hook, bq } = setup();
+  transport.decideReplies = [ON_DEMAND("2048")];
+  bq.failWith = [new FakeError(400, "bytesBilledLimitExceeded", "Query exceeded limit for bytes billed: 100.")];
+  const { error } = await call(hook, bq, { method: "POST", uri: "/queries", json: { query: "SELECT 1", requestId: "req-1", maximumBytesBilled: "100" } });
+  assert.equal(bq.sent[0]!.json.maximumBytesBilled, "100");
+  assert.equal((error as FakeError).code, 400);
+  assert.equal(bq.sent.length, 1);
+  assert.deepEqual((await events(router, transport)).map((e) => e.state), ["insert_error"]);
+});
+
+test("no move to on-demand on jobs.insert, or without a cap", async () => {
+  const { transport, hook, bq } = setup();
+  transport.decideReplies = [ON_DEMAND("2048"), ON_DEMAND()];
+  await call(hook, bq, insert());
+  assert.equal("reservation" in bq.sent[0]!.json.configuration, false);
+  assert.equal((transport.decides()[0]!.body as any).client.capabilities, undefined);
+  await call(hook, bq, { method: "POST", uri: "/queries", json: { query: "SELECT 2", requestId: "req-2" } });
+  assert.equal("reservation" in bq.sent[1]!.json, false);
+});

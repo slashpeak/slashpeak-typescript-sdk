@@ -13,6 +13,9 @@ import { isRecord, type Masker } from "../core/mask.js";
 import { SDK_NAME } from "../core/router.js";
 import { VERSION } from "../version.js";
 
+/** This call path re-runs the original job once when the bytes cap the router set stops it. */
+export const CAPABILITY_RERUN_BYTES_CAP = "rerun_bytes_cap";
+
 export const API_VERSION = 1;
 /** SQL over this is never sent: the router keeps it unread (masking cost grows with size). */
 export const MAX_SQL_BYTES = 256 * 1024;
@@ -158,7 +161,13 @@ export function buildDecideRequest(input: DecideInput): Record<string, unknown> 
     requestId,
     projectId: project,
     maskRevision: masker.revision,
-    client: { sdk: SDK_NAME, version: VERSION, library: input.library.slice(0, 256) },
+    client: {
+      sdk: SDK_NAME,
+      version: VERSION,
+      library: input.library.slice(0, 256),
+      // Only jobs.query can re-run a job the bytes cap stopped: the error comes back in the same call.
+      ...(input.kind === "query" ? { capabilities: [CAPABILITY_RERUN_BYTES_CAP] } : {}),
+    },
     query: q,
   };
   if (jobId) out.jobId = jobId;

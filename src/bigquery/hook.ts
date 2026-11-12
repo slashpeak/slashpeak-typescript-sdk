@@ -16,6 +16,9 @@
  *   that failed at once because the reservation is not found (nothing ran):
  *   run the original once under a new job id, and send the library's later
  *   calls for the old id (job polls, results, cancel) to the new one.
+ * - A move to on-demand (`reservation: none`, jobs.query only) carries a bytes
+ *   cap. If BigQuery stops the job on that cap (before it bills), run the
+ *   original once, then report `fallback`.
  * - Never change the caller's object: the hook sends copies.
  * - Read job state only from responses the library already fetches. No extra
  *   BigQuery calls.
@@ -49,6 +52,11 @@ const NO_FALLBACK = new Set([408, 409, 429]);
  * It re-runs only when BigQuery names a field we changed. The message is read here, never sent or logged.
  */
 const OUR_FIELDS = /reservation|label/i;
+/** The job's `reservation` value that runs it on-demand. */
+const ON_DEMAND = "none";
+const BYTES_CAP = /^\d{1,19}$/;
+/** BigQuery's reason when `maximumBytesBilled` stops a job; it checks before the job bills. */
+export const BYTES_CAP_REASON = "bytesBilledLimitExceeded";
 
 export type Callback = (error: unknown, body?: unknown, response?: unknown) => void;
 export type RequestFn = (this: unknown, reqOpts: unknown, callback?: unknown) => unknown;
@@ -89,10 +97,25 @@ function errorText(error: unknown): string {
   }
 }
 
-/** jobs.insert: a 4xx means no job was made. jobs.query: only when the error names our change. */
-export function mayFallBack(kind: RequestKind, code: number | null, error: unknown): boolean {
+/**
+ * jobs.insert: a 4xx means no job was made. jobs.query: only when the error names our change, or
+ * when the bytes cap we set stopped it (BigQuery checks the cap before the job bills).
+ */
+export function mayFallBack(kind: RequestKind, code: number | null, error: unknown, capped = false): boolean {
   if (code === null || code < 400 || code >= 500 || NO_FALLBACK.has(code)) return false;
+  if (capped && reasonOf(error) === BYTES_CAP_REASON) return true;
   return kind === "insert" || OUR_FIELDS.test(errorText(error));
+}
+
+/** True when the hook set `maximumBytesBilled` (the original had none). */
+export function addedBytesCap(kind: RequestKind, base: Json, changed: Json | null): boolean {
+  if (changed === null) return false;
+  const holder = (json: Json): unknown => {
+    const target = kind === "insert" ? json.configuration : json;
+    const query = kind === "insert" && isRecord(target) ? target.query : target;
+    return isRecord(query) ? query.maximumBytesBilled : undefined;
+  };
+  return holder(base) == null && holder(changed) != null;
 }
 
 /** A bounded, short-lived map by job id, oldest first. */
@@ -287,7 +310,10 @@ export class Hook {
   static apply(router: Router, kind: RequestKind, base: Json, decision: Decision): Json | null {
     const { action, reservation } = decision;
     const mode = stricterMode(router.settings.mode, decision.mode);
-    const move = action === "set_reservation" && mode === "active" && typeof reservation === "string" && RESERVATION.test(reservation);
+    // On-demand only on jobs.query: the one path that can re-run a job its bytes cap stopped.
+    const onDemand = reservation === ON_DEMAND && kind === "query";
+    const move =
+      action === "set_reservation" && mode === "active" && typeof reservation === "string" && (RESERVATION.test(reservation) || onDemand);
     let route: unknown = isRecord(decision.labels) ? decision.labels[LABEL_KEY] : null;
     if (action === "set_reservation" && !move) route = null; // Not moved: an `m_` label would claim a move that did not happen.
     if (!(typeof route === "string" && LABEL_VALUE.test(route))) route = null;
@@ -295,6 +321,12 @@ export class Hook {
     const changed = structuredClone(base);
     const target = (kind === "insert" ? changed.configuration : changed) as Json;
     if (move) target.reservation = reservation;
+    const cap = decision.maximumBytesBilled;
+    if (move && onDemand) {
+      // A move to on-demand always comes with the cap; without one, keep the job where it is.
+      if (target.maximumBytesBilled == null && !(typeof cap === "string" && BYTES_CAP.test(cap))) return null;
+      if (target.maximumBytesBilled == null) target.maximumBytesBilled = cap;
+    }
     if (route !== null) {
       const current: Json = isRecord(target.labels) ? { ...target.labels } : {};
       if (!(LABEL_KEY in current) && Object.keys(current).length < MAX_LABELS) {
@@ -374,7 +406,7 @@ export class Hook {
     body: unknown
   ): (() => void) | null {
     if (error) {
-      if (changed !== null && mayFallBack(plan.kind, statusCode(error), error)) {
+      if (changed !== null && mayFallBack(plan.kind, statusCode(error), error, addedBytesCap(plan.kind, plan.base, changed))) {
         return () => this.fallback(router, reqOpts, plan, event, deliver, send, error, false);
       }
       if (event) router.emit({ ...event, state: "insert_error", errorReason: reasonOf(error) });

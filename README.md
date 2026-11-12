@@ -68,6 +68,10 @@ npx slashpeak doctor --latency  # also 20 warm round trips
   reservation was deleted, BigQuery answers `jobs.insert` with a job that failed at once (nothing ran): the SDK runs
   your original request once under a new job id (`<your id>_fb` and 8 characters), and sends the client's later
   calls for that job (polls, results, cancel) to the new id. A failed query is never run twice.
+- **Move to on-demand (0.2.0 and later, off until you turn it on in SlashPeak).** Only on the `jobs.query` path.
+  The SDK sets `reservation: none` and a bytes cap (`maximumBytesBilled`) when your job has none. If BigQuery stops
+  the job on that cap, nothing was billed: the SDK runs your original request once and reports `fallback`. If your
+  job has its own cap, the SDK keeps it and never re-runs.
 - **PII is masked before anything leaves your process**: emails, phone numbers, IP addresses, and the patterns you
   add in SlashPeak → Settings → Privacy. Backtick-quoted names are left alone. Masking uses RE2 (the same engine
   and rules as the router and as BigQuery), so it runs in linear time.
